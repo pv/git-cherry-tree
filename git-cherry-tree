@@ -15,6 +15,9 @@ Examples:
   Which patches are in master branch, in directory `spam`, but not in 0.8.x
   $ git cherry-tree 0.8.x master -- spam
 
+  Interactively cherry-pick missing patches in `spam` directory
+  $ git cherry-tree -pix 0.8.x master -- spam
+
 """
 # Author: Pauli Virtanen <pav@iki.fi>. This script is in the public domain.
 
@@ -38,14 +41,16 @@ def main():
                  help="show patch statistics")
     p.add_option("-p", "--pick", action="store_true",
                  help="cherry-pick all missing patches")
+    p.add_option("-i", "--interactive", action="store_true",
+                 help="if pick: ask before picking each patch")
     p.add_option("-x", "--mark-picked", action="store_true",
                  help="if pick: mark changeset as picked (see cherry-pick)")
     p.add_option("-s", "--signoff", action="store_true",
                  help="if pick: signoff picked changesets (see cherry-pick)")
     p.add_option("-n", "--no-commit", action="store_true",
                  help="if pick: don't commit (see cherry-pick)")
-    p.add_option("-i", "--interactive", action="store_true",
-                 help="if pick: ask before picking each patch")
+    p.add_option("-d", "--edit", action="store_true",
+                 help="if pick: edit commit message before committing (see cherry-pick)")
     options, args = p.parse_args()
 
     paths = p.rargs
@@ -67,6 +72,10 @@ def main():
         pick_args.append('-s')
     if options.no_commit:
         pick_args.append('-n')
+    if options.edit:
+        pick_args.append('-e')
+    if options.interactive:
+        print "-- Available patches " + "-"*50
 
     out = git('cherry', *cherry_args)
     commits = [x.split(None, 1) for x in out.split("\n") if x.strip()]
@@ -146,20 +155,21 @@ def is_patch_already_applied(patch):
 
 def do_cherry_pick(to_pick, pick_args, interactive=False):
     for patch in to_pick:
-        info = git('show', '--abbrev-commit', '--quiet', '--pretty=oneline',
-                   patch)
+        info = git('show', '--abbrev-commit', '--stat', patch)
         print "\n\n-- Cherry-picking " + "-"*50
         print info
 
         if interactive:
             ok = True
             while True:
-                ip = raw_input("[a]pply patch, [s]kip patch: ").strip()
+                ip = raw_input("[a]pply patch, [s]kip patch, [q]uit: ").strip()
                 if ip == 'a':
                     break
                 elif ip == 's':
                     ok = False
                     break
+                elif ip == 'q':
+                    return
             if not ok:
                 continue
 
