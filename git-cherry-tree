@@ -36,7 +36,7 @@ def main():
                  help="don't check if patch has already been applied in working tree")
     p.add_option("--stat", action="store_true",
                  help="show patch statistics")
-    p.add_option("-p", "--pick", action="store_false",
+    p.add_option("-p", "--pick", action="store_true",
                  help="cherry-pick all missing patches")
     p.add_option("-x", "--mark-picked", action="store_true",
                  help="if pick: mark changeset as picked (see cherry-pick)")
