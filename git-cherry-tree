@@ -2,7 +2,7 @@
 """
 git-cherry-tree [OPTIONS] SRCBRANCH [LIMIT] [-- PATH...]
 
-Find commits not merged in the destination branch.
+Find commits in SRCBRANCH not merged in the current branch.
 
 Same as `git-cherry`, but consider only patches touching given subdirs, and try
 hard to check if the patch was actually applied.  Has also extra features for
