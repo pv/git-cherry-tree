@@ -13,7 +13,7 @@ Examples:
   $ git cherry-tree master
 
   Which patches are in master branch, in directory `spam`, but not in current
-  $ git cherry-tree 0.8.x master -- spam
+  $ git cherry-tree master -- spam
 
   Interactively cherry-pick missing patches in `spam` directory
   $ git cherry-tree -pix master -- spam
