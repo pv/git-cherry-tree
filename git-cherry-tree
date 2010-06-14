@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-git-cherry-tree [OPTIONS] DESTBRANCH [SRCBRANCH] [LIMIT] [-- PATH...]
+git-cherry-tree [OPTIONS] SRCBRANCH [LIMIT] [-- PATH...]
 
 Find commits not merged in the destination branch.
 
@@ -9,14 +9,14 @@ hard to check if the patch was actually applied.  Has also extra features for
 interactive picking of a patch sequence.
 
 Examples:
-  Which patches are in current branch, but not in 0.8.x
-  $ git cherry-tree 0.8.x
+  Which patches are in master branch, but not in the current one
+  $ git cherry-tree master
 
-  Which patches are in master branch, in directory `spam`, but not in 0.8.x
+  Which patches are in master branch, in directory `spam`, but not in current
   $ git cherry-tree 0.8.x master -- spam
 
   Interactively cherry-pick missing patches in `spam` directory
-  $ git cherry-tree -pix 0.8.x master -- spam
+  $ git cherry-tree -pix master -- spam
 
 """
 # Author: Pauli Virtanen <pav@iki.fi>. This script is in the public domain.
@@ -54,16 +54,16 @@ def main():
     options, args = p.parse_args()
 
     paths = p.rargs
-    cherry_args = p.largs
+    cherry_args = ['HEAD'] + p.largs
+
+    if not p.largs:
+        p.error('too few arguments')
 
     if not paths:
         # default to root directory
         paths = [git('rev-parse', '--show-cdup').strip()]
         if paths == ['']:
             paths = ['.']
-
-    if not paths or not cherry_args:
-        p.error('too few arguments')
 
     pick_args = []
     if options.mark_picked:
