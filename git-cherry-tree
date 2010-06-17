@@ -22,9 +22,11 @@ Examples:
 # Author: Pauli Virtanen <pav@iki.fi>. This script is in the public domain.
 
 from subprocess import Popen, PIPE, call
+import tempfile
 import optparse
 import re
 import os
+import subprocess
 
 def main():
     p = optparse.OptionParser(__doc__.strip())
@@ -40,11 +42,10 @@ def main():
     p.add_option("--stat", action="store_true",
                  help="show patch statistics")
     p.add_option("-p", "--pick", action="store_true",
-                 help="cherry-pick all missing patches")
-    p.add_option("-i", "--interactive", action="store_true",
-                 help="if pick: ask before picking each patch")
-    p.add_option("-x", "--mark-picked", action="store_true",
-                 help="if pick: mark changeset as picked (see cherry-pick)")
+                 help="interactively cherry-pick patches")
+    p.add_option("-x", "--no-mark-picked", action="store_false",
+                 dest="mark_picked", default=True,
+                 help="if pick: don't mark changeset as picked (see cherry-pick)")
     p.add_option("-s", "--signoff", action="store_true",
                  help="if pick: signoff picked changesets (see cherry-pick)")
     p.add_option("-n", "--no-commit", action="store_true",
@@ -74,8 +75,9 @@ def main():
         pick_args.append('-n')
     if options.edit:
         pick_args.append('-e')
-    if options.interactive:
-        print "-- Available patches " + "-"*50
+
+    if options.pick:
+        print "git-cherry-tree: preparing..."
 
     out = git('cherry', *cherry_args)
     commits = [x.split(None, 1) for x in out.split("\n") if x.strip()]
@@ -105,7 +107,7 @@ def main():
             out += stat
 
         return out
-    
+
     for act, patch in commits:
         out = git('diff-tree', '--name-only', '-r', patch)
         paths = [x for x in out.split("\n") if x.strip()][1:]
@@ -121,17 +123,18 @@ def main():
             if is_patch_already_applied(patch):
                 act = '-'
 
-        if options.missing_only:
-            if act == '+':
-                print format_patch(patch)
-        else:
-            print "%s %s" % (act, format_patch(patch, 78))
+        if not options.pick:
+            if options.missing_only:
+                if act == '+':
+                    print format_patch(patch)
+            else:
+                print "%s %s" % (act, format_patch(patch, 78))
 
         if act == '+':
             to_pick.append(patch)
 
     if options.pick:
-        do_cherry_pick(to_pick, pick_args, interactive=options.interactive)
+        do_cherry_pick(to_pick, pick_args)
 
 def is_patch_already_applied(patch):
     patch = git('format-patch', '--stdout', patch + '^!')
@@ -153,47 +156,111 @@ def is_patch_already_applied(patch):
         os.chdir(cwd)
     return False
 
-def do_cherry_pick(to_pick, pick_args, interactive=False):
+def do_cherry_pick(to_pick, pick_args):
+    fd, tmp_fn = tempfile.mkstemp()
+    os.close(fd)
+    try:
+        _do_cherry_pick(tmp_fn, to_pick, pick_args)
+    finally:
+        os.unlink(tmp_fn)
+
+def _do_cherry_pick(filename, to_pick, pick_args):
+    #
+    # Dump to file for interaction
+    #
+    f = open(filename, 'w')
+    f.write("flags %s\n" % " ".join(pick_args))
+
+    infos = []
     for patch in to_pick:
+        pretty = git('show', '--quiet', '--pretty=oneline', '--abbrev-commit', patch).strip()
+        f.write("skip " + pretty[:70] + "\n")
+
         info = git('show', '--abbrev-commit', '--stat', patch)
-        print "\n\n-- Cherry-picking " + "-"*50
-        print info
+        lines = ["# " + pretty[:70], "# "]
+        parts = info.strip().split("\n")[1:]
+        while parts:
+            part = parts.pop(0)
+            lines.append("#     " + part[:70])
+            while len(part) > 70:
+                part = part[70:]
+                lines.append("#         " + part[:70])
+        infos.append("\n".join(lines) + "\n#")
 
-        if interactive:
-            ok = True
-            while True:
-                ip = raw_input("[a]pply patch, [s]kip patch, [q]uit: ").strip()
-                if ip == 'a':
-                    break
-                elif ip == 's':
-                    ok = False
-                    break
-                elif ip == 'q':
-                    return
-            if not ok:
-                continue
+    f.write("""\
 
-        out, ret = git(*(['cherry-pick'] + pick_args + [patch]),
-                       returncode=True)
+# Select patches to cherry-pick.
+#
+# Commands:
+#  s, skip = do not cherry-pick the commit (you can also remove the line)
+#  p, pick = cherry-pick commit
+#  r, reword = cherry-pick commit, but edit the commit message
+#  f, flags = set default flags used for git-cherry-pick for all commits
+#
+#------------------------------------------------------------------------------
+#
+""")
+    f.write("\n".join(infos) + "\n")
+    f.close()
+
+    editor = os.environ.get('EDITOR', 'vi')
+    subprocess.call([editor, filename])
+
+    #
+    # Read instructions from file
+    #
+    to_pick = []
+    pick_args = []
+
+    f = open(filename, 'r')
+    for line in f:
+        line = line.strip()
+        if line.startswith('#') or not line:
+            continue
+
+        parts = line.split()
+        if len(line) < 2:
+            continue
+
+        cmd = parts.pop(0)
+        if cmd[0] == 'p':
+            to_pick.append((parts[0], list(pick_args)))
+        elif cmd[0] == 'r':
+            to_pick.append((parts[0], ['-e'] + list(pick_args)))
+        elif cmd[0] == 'f':
+            pick_args = parts
+        else:
+            # unknown stuff: just skip it
+            pass
+
+    #
+    # Proceed
+    #
+    for patch, flags in to_pick:
+        print "git-cherry-tree: picking %s" % patch
+
+        ret = subprocess.call(['git', 'cherry-pick'] + flags + [patch])
 
         if ret != 0:
             if 'nothing added to commit but untracked files present' in out:
                 # false alarm... it's just already rebased
-                print "Has already been picked"
+                print "    has already been picked, skipping."
                 continue
 
-            print out
             shell_seen = False
             while True:
                 if not shell_seen:
-                    ip = raw_input("[s]kip patch, [d]rop to shell: ").strip()
+                    ip = raw_input("[s]kip patch, [d]rop to shell, [q]uit: ").strip()
                 else:
-                    ip = raw_input("[c]ontinue, [d]rop to shell: ").strip()
+                    ip = raw_input("[c]ontinue, [d]rop to shell, [q]uit: ").strip()
                 if (ip == 's' and not shell_seen) or (ip == 'c' and shell_seen):
                     break
                 elif ip == 'd':
                     call(os.environ.get('SHELL', 'bash'))
                     shell_seen = True
+                elif ip == 'q':
+                    git('co', '-f')
+                    return
             git('co', '-f')
 
 def git(*args, **kw):
