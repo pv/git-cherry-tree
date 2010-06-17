@@ -16,5 +16,5 @@ Examples::
   $ git cherry-tree master -- spam
 
   Interactively cherry-pick missing patches in `spam` directory
-  $ git cherry-tree -pix master -- spam
+  $ git cherry-tree -p master -- spam
 
