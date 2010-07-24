@@ -242,11 +242,6 @@ def _do_cherry_pick(filename, to_pick, pick_args):
         ret = subprocess.call(['git', 'cherry-pick'] + flags + [patch])
 
         if ret != 0:
-            if 'nothing added to commit but untracked files present' in out:
-                # false alarm... it's just already rebased
-                print "    has already been picked, skipping."
-                continue
-
             shell_seen = False
             while True:
                 if not shell_seen:
