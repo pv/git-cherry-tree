@@ -109,6 +109,9 @@ def main():
         return out
 
     for act, patch in commits:
+        if options.missing_only and act == '-':
+            continue
+
         out = git('diff-tree', '--name-only', '-r', patch)
         paths = [x for x in out.split("\n") if x.strip()][1:]
         ok = False
