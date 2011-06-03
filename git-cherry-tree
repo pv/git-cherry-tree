@@ -33,12 +33,15 @@ def main():
     p.add_option("-m", "--no-missing-only", action="store_false",
                  dest="missing_only", default=True,
                  help="don't show only missing patches")
-    p.add_option("-e", "--no-pretty", action="store_false", 
+    p.add_option("-e", "--no-pretty", action="store_false",
                  dest="pretty", default=True,
                  help="don't show pretty log for each patch")
-    p.add_option("-o", "--no-orly", action="store_false", 
+    p.add_option("-o", "--no-orly", action="store_false",
                  dest="orly", default=True,
                  help="don't check if patch has already been applied in working tree")
+    p.add_option("-l", "--no-log-messages", action="store_false",
+                 dest="messages", default=True,
+                 help="don't trust cherry pick hashes mentioned in commit messages")
     p.add_option("--stat", action="store_true",
                  help="show patch statistics")
     p.add_option("-p", "--pick", action="store_true",
@@ -57,8 +60,8 @@ def main():
     paths = p.rargs
     cherry_args = ['HEAD'] + p.largs
 
-    if not p.largs:
-        p.error('too few arguments')
+    if len(cherry_args) != 2:
+        p.error('wrong number of arguments')
 
     if not paths:
         # default to root directory
@@ -108,7 +111,24 @@ def main():
 
         return out
 
+    cherry_hashes = {}
+
+    if options.messages:
+        our_commits = git('rev-list', '%s..' % p.largs[0])
+        for patch in our_commits.split("\n"):
+            patch = patch.strip()
+            if not patch:
+                continue
+            out = git('cat-file', 'commit', patch)
+            m = re.search('cherry picked from commit ([a-f0-9]+)', out,
+                          re.S)
+            if m:
+                cherry_hashes[m.group(1)] = patch
+
     for act, patch in commits:
+        if patch in cherry_hashes:
+            act = '-'
+
         if options.missing_only and act == '-':
             continue
 
